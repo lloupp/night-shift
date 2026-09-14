@@ -4,6 +4,8 @@ const PlayerClass = preload("res://scripts/player.gd")
 const EnemyClass = preload("res://scripts/enemy.gd")
 const DoorClass = preload("res://scripts/door.gd")
 const AmmoClass = preload("res://scripts/ammo_pickup.gd")
+const KeyPickupClass = preload("res://scripts/key_pickup.gd")
+const ExitGateClass = preload("res://scripts/exit_gate.gd")
 const PresentationFXClass = preload("res://scripts/presentation_fx.gd")
 
 const CAMERA_DIRECTIONS := ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
@@ -16,8 +18,10 @@ var camera_step := 0
 var camera_target_angle := 0.0
 var camera_follow_position := Vector3.ZERO
 var status_label: Label
+var objective_label: Label
 var prompt_label: Label
 var message_label: Label
+var completion_label: Label
 var camera_angle_label: Label
 var crosshair: Label
 var damage_overlay: ColorRect
@@ -26,6 +30,7 @@ var damage_flash := 0.0
 var crosshair_feedback_timer := 0.0
 var current_interactable: Node
 var pending_shot := false
+var run_completed := false
 var occluded_bodies: Array[Node3D] = []
 var flicker_lamps: Array[OmniLight3D] = []
 var flicker_clock := 0.0
@@ -44,6 +49,7 @@ func _ready() -> void:
 	player.died.connect(_on_player_died)
 	_update_status()
 	_update_camera_angle_label()
+	_update_objective("Encontre a chave de serviço")
 
 func _physics_process(delta: float) -> void:
 	if not is_instance_valid(player):
@@ -71,7 +77,7 @@ func _exit_tree() -> void:
 	_restore_occluders()
 
 func _unhandled_input(event: InputEvent) -> void:
-	if not is_instance_valid(player):
+	if not is_instance_valid(player) or run_completed:
 		return
 	if event is InputEventKey and event.pressed and not event.echo:
 		match event.physical_keycode:
@@ -122,7 +128,8 @@ func _build_level() -> void:
 	_add_decor_box("RoadStripeB", Vector3(0.12, 0.045, 2.1), Vector3(0, 0.045, 0.0), Color(0.42, 0.37, 0.22))
 	_add_decor_box("RoadStripeC", Vector3(0.12, 0.045, 2.1), Vector3(0, 0.045, 5.5), Color(0.42, 0.37, 0.22))
 
-	_add_static_box("NorthWall", Vector3(24, 3.2, 0.35), Vector3(0, 1.6, -10), Color(0.13, 0.14, 0.14))
+	_add_static_box("NorthWallWest", Vector3(10.5, 3.2, 0.35), Vector3(-6.75, 1.6, -10), Color(0.13, 0.14, 0.14))
+	_add_static_box("NorthWallEast", Vector3(10.5, 3.2, 0.35), Vector3(6.75, 1.6, -10), Color(0.13, 0.14, 0.14))
 	_add_static_box("SouthWall", Vector3(24, 3.2, 0.35), Vector3(0, 1.6, 10), Color(0.13, 0.14, 0.14))
 	_add_static_box("WestWall", Vector3(0.35, 3.2, 20), Vector3(-12, 1.6, 0), Color(0.13, 0.14, 0.14))
 	_add_static_box("EastWall", Vector3(0.35, 3.2, 20), Vector3(12, 1.6, 0), Color(0.13, 0.14, 0.14))
@@ -139,6 +146,7 @@ func _build_level() -> void:
 
 	_add_decor_box("WestAwning", Vector3(4.2, 0.12, 1.1), Vector3(-7.2, 2.65, -4.05), Color(0.27, 0.09, 0.08))
 	_add_decor_box("EastSign", Vector3(2.2, 0.18, 0.12), Vector3(7.4, 2.4, -4.35), Color(0.11, 0.34, 0.31))
+	_add_decor_box("ExitSign", Vector3(2.8, 0.16, 0.10), Vector3(0.0, 2.8, -9.62), Color(0.22, 0.32, 0.24))
 
 	_add_lamp(Vector3(-5.6, 2.65, -1.6), Color(1.0, 0.58, 0.31), 4.2, true)
 	_add_lamp(Vector3(5.6, 2.65, 4.8), Color(0.40, 0.62, 1.0), 2.8)
@@ -162,12 +170,25 @@ func _spawn_gameplay_objects() -> void:
 	ammo.position = Vector3(-6.0, 0.05, -1.5)
 	add_child(ammo)
 
+	var service_key: KeyPickup = KeyPickupClass.new()
+	service_key.name = "ServiceKey"
+	service_key.position = Vector3(-6.6, 0.05, -3.25)
+	service_key.collected.connect(_on_key_collected)
+	add_child(service_key)
+
+	var exit_gate: ExitGate = ExitGateClass.new()
+	exit_gate.name = "ExitGate"
+	exit_gate.position = Vector3(-1.15, 0.0, -9.72)
+	exit_gate.unlocked.connect(_on_exit_unlocked)
+	add_child(exit_gate)
+
 	for spawn_position in [Vector3(6.2, 0.05, -7.1), Vector3(-8.0, 0.05, 6.6)]:
 		var enemy: StalkerEnemy = EnemyClass.new()
 		enemy.name = "Stalker"
 		enemy.position = spawn_position
 		enemy.target = player
 		enemy.died.connect(_on_enemy_died)
+		enemy.add_to_group("enemy")
 		add_child(enemy)
 
 func _build_camera() -> void:
@@ -206,6 +227,13 @@ func _build_ui() -> void:
 	status_label.add_theme_font_size_override("font_size", 13)
 	ui.add_child(status_label)
 
+	objective_label = Label.new()
+	objective_label.position = Vector2(70, 27)
+	objective_label.size = Vector2(340, 18)
+	objective_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	objective_label.add_theme_font_size_override("font_size", 10)
+	ui.add_child(objective_label)
+
 	camera_angle_label = Label.new()
 	camera_angle_label.position = Vector2(418, 8)
 	camera_angle_label.size = Vector2(52, 18)
@@ -221,11 +249,19 @@ func _build_ui() -> void:
 	ui.add_child(prompt_label)
 
 	message_label = Label.new()
-	message_label.position = Vector2(120, 36)
+	message_label.position = Vector2(120, 48)
 	message_label.size = Vector2(240, 24)
 	message_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	message_label.add_theme_font_size_override("font_size", 12)
 	ui.add_child(message_label)
+
+	completion_label = Label.new()
+	completion_label.position = Vector2(70, 102)
+	completion_label.size = Vector2(340, 70)
+	completion_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	completion_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	completion_label.add_theme_font_size_override("font_size", 20)
+	ui.add_child(completion_label)
 
 	var controls := Label.new()
 	controls.text = "WASD mover  SHIFT correr  Q/E câmera  RMB mirar  LMB atirar  R recarregar  F interagir"
@@ -349,7 +385,7 @@ func _update_camera_occlusion() -> void:
 			occluded_bodies.append(body)
 
 func _update_aim() -> void:
-	if not player.aiming:
+	if run_completed or not player.aiming:
 		return
 	var mouse := get_viewport().get_mouse_position()
 	crosshair.position = mouse - Vector2(6, 11)
@@ -367,6 +403,8 @@ func _mouse_raycast() -> Dictionary:
 	return get_world_3d().direct_space_state.intersect_ray(query)
 
 func _fire() -> void:
+	if run_completed:
+		return
 	if not player.try_fire():
 		if player.aiming and player.ammo == 0:
 			_show_message("Sem munição — R para recarregar")
@@ -416,6 +454,10 @@ func _update_crosshair_feedback(delta: float) -> void:
 		crosshair.modulate = Color.WHITE
 
 func _update_interaction_prompt() -> void:
+	if run_completed:
+		current_interactable = null
+		prompt_label.text = ""
+		return
 	current_interactable = null
 	var nearest_distance := 2.1
 	for node in get_tree().get_nodes_in_group("interactable"):
@@ -435,7 +477,7 @@ func _update_interaction_prompt() -> void:
 		prompt_label.text = ""
 
 func _interact() -> void:
-	if not is_instance_valid(current_interactable):
+	if run_completed or not is_instance_valid(current_interactable):
 		return
 	if current_interactable.has_method("interact"):
 		var result = current_interactable.interact(player)
@@ -448,9 +490,33 @@ func _update_status() -> void:
 	var reload_text := "  RECARREGANDO" if player.reloading else ""
 	status_label.text = "VIDA %03d   MUNIÇÃO %d/%d%s" % [player.health, player.ammo, player.reserve_ammo, reload_text]
 
+func _update_objective(text: String) -> void:
+	if is_instance_valid(objective_label):
+		objective_label.text = "OBJETIVO: " + text
+
 func _show_message(text: String) -> void:
 	message_label.text = text
 	message_timer = 1.6
+
+func _on_key_collected(_key_id: String) -> void:
+	_update_objective("Vá ao portão de serviço ao norte")
+	_show_message("Chave de serviço encontrada")
+
+func _on_exit_unlocked() -> void:
+	if run_completed:
+		return
+	run_completed = true
+	player.aiming = false
+	player.set_physics_process(false)
+	crosshair.visible = false
+	for enemy in get_tree().get_nodes_in_group("enemy"):
+		if is_instance_valid(enemy):
+			enemy.set_physics_process(false)
+	_update_objective("Concluído")
+	completion_label.text = "ÁREA SEGURA\nVERTICAL SLICE CONCLUÍDO"
+	_show_message("Portão de serviço destrancado")
+	if is_instance_valid(fx):
+		fx.add_camera_trauma(0.12)
 
 func _on_player_damaged(_amount: int) -> void:
 	damage_flash = 1.0
