@@ -11,6 +11,8 @@ var move_speed := 1.45
 var detection_range := 10.0
 var attack_range := 1.25
 var attack_cooldown := 0.0
+var body_tint := Color.WHITE
+var eye_tint := Color(0.78, 0.07, 0.035)
 var visual_root: Node3D
 var visual_parts: Array[MeshInstance3D] = []
 var walk_phase := 0.0
@@ -35,18 +37,18 @@ func _build_body() -> void:
 	visual_root = Node3D.new()
 	visual_root.name = "VisualRoot"
 	add_child(visual_root)
-	_add_part("Torso", Vector3(0.66, 0.94, 0.38), Vector3(0, 1.03, 0), Color(0.28, 0.12, 0.10))
-	_add_part("LeftLeg", Vector3(0.23, 0.78, 0.24), Vector3(-0.17, 0.43, 0), Color(0.12, 0.07, 0.065))
-	_add_part("RightLeg", Vector3(0.23, 0.78, 0.24), Vector3(0.17, 0.43, 0), Color(0.12, 0.07, 0.065))
-	_add_part("LeftArm", Vector3(0.19, 0.78, 0.22), Vector3(-0.45, 1.03, -0.03), Color(0.31, 0.14, 0.11))
-	_add_part("RightArm", Vector3(0.19, 0.78, 0.22), Vector3(0.45, 1.03, -0.03), Color(0.31, 0.14, 0.11))
+	_add_part("Torso", Vector3(0.66, 0.94, 0.38), Vector3(0, 1.03, 0), Color(0.28, 0.12, 0.10) * body_tint)
+	_add_part("LeftLeg", Vector3(0.23, 0.78, 0.24), Vector3(-0.17, 0.43, 0), Color(0.12, 0.07, 0.065) * body_tint)
+	_add_part("RightLeg", Vector3(0.23, 0.78, 0.24), Vector3(0.17, 0.43, 0), Color(0.12, 0.07, 0.065) * body_tint)
+	_add_part("LeftArm", Vector3(0.19, 0.78, 0.22), Vector3(-0.45, 1.03, -0.03), Color(0.31, 0.14, 0.11) * body_tint)
+	_add_part("RightArm", Vector3(0.19, 0.78, 0.22), Vector3(0.45, 1.03, -0.03), Color(0.31, 0.14, 0.11) * body_tint)
 
 	var head := MeshInstance3D.new()
 	var head_mesh := SphereMesh.new()
 	head_mesh.radius = 0.24
 	head_mesh.height = 0.48
 	var head_mat := StandardMaterial3D.new()
-	head_mat.albedo_color = Color(0.30, 0.16, 0.13)
+	head_mat.albedo_color = Color(0.30, 0.16, 0.13) * body_tint
 	head_mat.roughness = 1.0
 	head_mesh.material = head_mat
 	head.mesh = head_mesh
@@ -56,7 +58,7 @@ func _build_body() -> void:
 
 	var eye := OmniLight3D.new()
 	eye.position = Vector3(0, 1.55, -0.30)
-	eye.light_color = Color(0.78, 0.07, 0.035)
+	eye.light_color = eye_tint
 	eye.light_energy = 0.34
 	eye.omni_range = 1.15
 	add_child(eye)
