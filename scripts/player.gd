@@ -19,6 +19,7 @@ var aim_point := Vector3.ZERO
 var camera_basis := Basis.IDENTITY
 var fire_cooldown := 0.0
 var reloading := false
+var key_items: Dictionary = {}
 var visual_root: Node3D
 var left_leg: MeshInstance3D
 var right_leg: MeshInstance3D
@@ -206,6 +207,12 @@ func reload() -> void:
 func add_ammo(amount: int) -> void:
 	reserve_ammo += amount
 	stats_changed.emit()
+
+func add_key(key_id: String) -> void:
+	key_items[key_id] = true
+
+func has_key(key_id: String) -> bool:
+	return key_items.has(key_id)
 
 func damage(amount: int) -> void:
 	if health <= 0:
