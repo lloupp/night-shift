@@ -56,7 +56,6 @@ func interact(player: SurvivorPlayer) -> String:
 		return "Energia restaurada"
 	if not player.has_key(required_key):
 		return "Painel sem fusível"
-	player.consume_key(required_key)
 	is_powered = true
 	indicator.light_color = Color(0.14, 1.0, 0.35)
 	indicator.light_energy = 1.0
