@@ -1,0 +1,36 @@
+; Engine configuration file.
+; Original prototype inspired by the visual language of 1990s survival horror.
+; No Holstin assets, characters, maps or story are used.
+
+config_version=5
+
+[application]
+config/name="Night Shift Prototype"
+run/main_scene="res://scenes/main.tscn"
+config/features=PackedStringArray("4.3")
+
+[display/window]
+size/viewport_width=480
+size/viewport_height=270
+size/window_width_override=1280
+size/window_height_override=720
+stretch/mode="canvas_items"
+
+[rendering]
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+textures/default_filters/use_nearest_mipmap_filter=false
+textures/canvas_textures/default_texture_filter=0
+anti_aliasing/quality/msaa_3d=0
+anti_aliasing/quality/screen_space_aa=0
+scaling_3d/mode=0
+scaling_3d/scale=0.72
+
+[physics]
+common/enable_pause_aware_picking=true
+
+[layer_names]
+3d_physics/layer_1="World"
+3d_physics/layer_2="Player"
+3d_physics/layer_3="Enemies"
+3d_physics/layer_4="Interactables"
