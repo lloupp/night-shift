@@ -2,6 +2,7 @@ class_name SurvivorPlayer
 extends CharacterBody3D
 
 signal stats_changed
+signal damaged(amount: int)
 signal died
 
 const WALK_SPEED := 3.2
@@ -24,6 +25,7 @@ var right_leg: MeshInstance3D
 var left_arm: MeshInstance3D
 var right_arm: MeshInstance3D
 var gun: MeshInstance3D
+var muzzle: Node3D
 var walk_phase := 0.0
 
 func _ready() -> void:
@@ -67,6 +69,11 @@ func _build_body() -> void:
 
 	gun = _add_box_part("Pistol", Vector3(0.10, 0.10, 0.42), Vector3(0.22, 1.16, -0.40), Color(0.08, 0.085, 0.09))
 	gun.visible = false
+
+	muzzle = Node3D.new()
+	muzzle.name = "Muzzle"
+	muzzle.position = Vector3(0.22, 1.16, -0.66)
+	visual_root.add_child(muzzle)
 
 	var flashlight := SpotLight3D.new()
 	flashlight.name = "Flashlight"
@@ -169,6 +176,11 @@ func _animate_visual(delta: float) -> void:
 func set_camera_basis(value: Basis) -> void:
 	camera_basis = value
 
+func get_muzzle_position() -> Vector3:
+	if is_instance_valid(muzzle):
+		return muzzle.global_position
+	return global_position + Vector3(0, 1.15, 0)
+
 func try_fire() -> bool:
 	if not aiming or reloading or fire_cooldown > 0.0:
 		return false
@@ -196,7 +208,10 @@ func add_ammo(amount: int) -> void:
 	stats_changed.emit()
 
 func damage(amount: int) -> void:
+	if health <= 0:
+		return
 	health = maxi(0, health - amount)
+	damaged.emit(amount)
 	stats_changed.emit()
 	if health == 0:
 		died.emit()
