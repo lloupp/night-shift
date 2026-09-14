@@ -4,12 +4,14 @@ const PlayerClass = preload("res://scripts/player.gd")
 const EnemyClass = preload("res://scripts/enemy.gd")
 const DoorClass = preload("res://scripts/door.gd")
 const AmmoClass = preload("res://scripts/ammo_pickup.gd")
+const PresentationFXClass = preload("res://scripts/presentation_fx.gd")
 
 const CAMERA_DIRECTIONS := ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
 
 var player: SurvivorPlayer
 var camera_pivot: Node3D
 var camera: Camera3D
+var fx: PresentationFX
 var camera_step := 0
 var camera_target_angle := 0.0
 var camera_follow_position := Vector3.ZERO
@@ -18,10 +20,15 @@ var prompt_label: Label
 var message_label: Label
 var camera_angle_label: Label
 var crosshair: Label
+var damage_overlay: ColorRect
 var message_timer := 0.0
+var damage_flash := 0.0
+var crosshair_feedback_timer := 0.0
 var current_interactable: Node
 var pending_shot := false
 var occluded_bodies: Array[Node3D] = []
+var flicker_lamps: Array[OmniLight3D] = []
+var flicker_clock := 0.0
 
 func _ready() -> void:
 	_build_environment()
@@ -29,9 +36,11 @@ func _ready() -> void:
 	_spawn_player()
 	_spawn_gameplay_objects()
 	_build_camera()
+	_build_presentation_fx()
 	_build_ui()
 	camera_follow_position = player.global_position + Vector3(0, 0.72, 0)
 	player.stats_changed.connect(_update_status)
+	player.damaged.connect(_on_player_damaged)
 	player.died.connect(_on_player_died)
 	_update_status()
 	_update_camera_angle_label()
@@ -47,6 +56,9 @@ func _physics_process(delta: float) -> void:
 	_update_camera_occlusion()
 	_update_aim()
 	_update_interaction_prompt()
+	_update_lamp_flicker(delta)
+	_update_damage_feedback(delta)
+	_update_crosshair_feedback(delta)
 	if pending_shot:
 		pending_shot = false
 		_fire()
@@ -128,9 +140,9 @@ func _build_level() -> void:
 	_add_decor_box("WestAwning", Vector3(4.2, 0.12, 1.1), Vector3(-7.2, 2.65, -4.05), Color(0.27, 0.09, 0.08))
 	_add_decor_box("EastSign", Vector3(2.2, 0.18, 0.12), Vector3(7.4, 2.4, -4.35), Color(0.11, 0.34, 0.31))
 
-	_add_lamp(Vector3(-5.6, 2.65, -1.6), Color(1.0, 0.58, 0.31), 4.2)
+	_add_lamp(Vector3(-5.6, 2.65, -1.6), Color(1.0, 0.58, 0.31), 4.2, true)
 	_add_lamp(Vector3(5.6, 2.65, 4.8), Color(0.40, 0.62, 1.0), 2.8)
-	_add_lamp(Vector3(0.0, 3.4, -5.8), Color(0.78, 0.48, 0.25), 2.2)
+	_add_lamp(Vector3(0.0, 3.4, -5.8), Color(0.78, 0.48, 0.25), 2.2, true)
 	_add_lamp(Vector3(-8.6, 2.8, 6.2), Color(0.72, 0.78, 0.68), 1.6)
 
 func _spawn_player() -> void:
@@ -155,6 +167,7 @@ func _spawn_gameplay_objects() -> void:
 		enemy.name = "Stalker"
 		enemy.position = spawn_position
 		enemy.target = player
+		enemy.died.connect(_on_enemy_died)
 		add_child(enemy)
 
 func _build_camera() -> void:
@@ -170,10 +183,24 @@ func _build_camera() -> void:
 	camera.look_at(Vector3(0, 0.55, 0), Vector3.UP)
 	camera.current = true
 
+func _build_presentation_fx() -> void:
+	fx = PresentationFXClass.new()
+	fx.name = "PresentationFX"
+	add_child(fx)
+	fx.configure_camera(camera)
+
 func _build_ui() -> void:
 	var ui := CanvasLayer.new()
 	ui.name = "HUD"
 	add_child(ui)
+
+	damage_overlay = ColorRect.new()
+	damage_overlay.position = Vector2.ZERO
+	damage_overlay.size = Vector2(480, 270)
+	damage_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	damage_overlay.color = Color(0.42, 0.01, 0.005, 0.0)
+	ui.add_child(damage_overlay)
+
 	status_label = Label.new()
 	status_label.position = Vector2(10, 8)
 	status_label.add_theme_font_size_override("font_size", 13)
@@ -250,14 +277,19 @@ func _add_decor_box(node_name: String, size: Vector3, position: Vector3, color: 
 	visual.mesh = box
 	add_child(visual)
 
-func _add_lamp(position: Vector3, color: Color, energy: float) -> void:
+func _add_lamp(position: Vector3, color: Color, energy: float, flicker: bool = false) -> void:
 	var lamp := OmniLight3D.new()
 	lamp.position = position
 	lamp.light_color = color
 	lamp.light_energy = energy
 	lamp.omni_range = 6.2
 	lamp.shadow_enabled = true
+	lamp.set_meta("base_energy", energy)
+	lamp.set_meta("flicker_phase", randf_range(0.0, 4.0))
 	add_child(lamp)
+	if flicker:
+		flicker_lamps.append(lamp)
+
 	var fixture := MeshInstance3D.new()
 	var mesh := SphereMesh.new()
 	mesh.radius = 0.08
@@ -339,11 +371,49 @@ func _fire() -> void:
 		if player.aiming and player.ammo == 0:
 			_show_message("Sem munição — R para recarregar")
 		return
+
+	if is_instance_valid(fx):
+		fx.muzzle_flash(player.get_muzzle_position())
+		fx.add_camera_trauma(0.16)
+	crosshair.text = "×"
+	crosshair.modulate = Color(1.0, 0.72, 0.34)
+	crosshair_feedback_timer = 0.09
+
 	var hit := _mouse_raycast()
 	if not hit.is_empty():
 		var collider: Object = hit.collider
-		if collider.has_method("take_damage"):
+		var enemy_hit := collider.has_method("take_damage")
+		if is_instance_valid(fx):
+			fx.impact(hit.position, enemy_hit)
+		if enemy_hit:
 			collider.take_damage(1)
+			if is_instance_valid(fx):
+				fx.add_camera_trauma(0.05)
+
+func _update_lamp_flicker(delta: float) -> void:
+	flicker_clock += delta
+	for lamp in flicker_lamps:
+		if not is_instance_valid(lamp):
+			continue
+		var base_energy := float(lamp.get_meta("base_energy", lamp.light_energy))
+		var phase := float(lamp.get_meta("flicker_phase", 0.0))
+		var wave := 0.91 + sin(flicker_clock * 11.0 + phase) * 0.09
+		var dropout := 0.38 if fmod(flicker_clock + phase, 4.1) < 0.045 else 1.0
+		lamp.light_energy = base_energy * maxf(0.20, wave * dropout)
+
+func _update_damage_feedback(delta: float) -> void:
+	if damage_flash > 0.0:
+		damage_flash = maxf(0.0, damage_flash - delta * 2.8)
+	if is_instance_valid(damage_overlay):
+		damage_overlay.color = Color(0.42, 0.01, 0.005, damage_flash * 0.34)
+
+func _update_crosshair_feedback(delta: float) -> void:
+	if crosshair_feedback_timer > 0.0:
+		crosshair_feedback_timer = maxf(0.0, crosshair_feedback_timer - delta)
+		return
+	if is_instance_valid(crosshair):
+		crosshair.text = "+"
+		crosshair.modulate = Color.WHITE
 
 func _update_interaction_prompt() -> void:
 	current_interactable = null
@@ -381,6 +451,16 @@ func _update_status() -> void:
 func _show_message(text: String) -> void:
 	message_label.text = text
 	message_timer = 1.6
+
+func _on_player_damaged(_amount: int) -> void:
+	damage_flash = 1.0
+	if is_instance_valid(fx):
+		fx.add_camera_trauma(0.34)
+
+func _on_enemy_died(world_position: Vector3) -> void:
+	if is_instance_valid(fx):
+		fx.death_burst(world_position)
+		fx.add_camera_trauma(0.10)
 
 func _on_player_died() -> void:
 	player.set_physics_process(false)
