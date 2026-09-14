@@ -21,7 +21,7 @@ jobs:
         with:
           version: 4.3.0
           use-dotnet: false
-          include-templates: false
+          include-templates: true
 
       - name: Show Godot version
         run: godot --version
@@ -34,3 +34,16 @@ jobs:
 
       - name: Validate gameplay progression
         run: godot --headless --path . --script res://tests/progression_smoke.gd
+
+      - name: Export Web build
+        run: |
+          mkdir -p build/web
+          godot --headless --path . --export-release "Web" build/web/index.html
+
+      - name: Upload Web artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: night-shift-web-${{ github.sha }}
+          path: build/web
+          if-no-files-found: error
+          retention-days: 14
