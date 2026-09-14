@@ -1,6 +1,8 @@
 class_name StalkerEnemy
 extends CharacterBody3D
 
+signal died(world_position: Vector3)
+
 const FACING_STEP := PI / 4.0
 
 var target: SurvivorPlayer
@@ -10,12 +12,16 @@ var detection_range := 10.0
 var attack_range := 1.25
 var attack_cooldown := 0.0
 var visual_root: Node3D
+var visual_parts: Array[MeshInstance3D] = []
 var walk_phase := 0.0
+var hit_flash_timer := 0.0
+var hit_material: StandardMaterial3D
 
 func _ready() -> void:
 	collision_layer = 4
 	collision_mask = 1 | 2
 	_build_body()
+	_build_hit_material()
 
 func _build_body() -> void:
 	var shape := CapsuleShape3D.new()
@@ -46,6 +52,7 @@ func _build_body() -> void:
 	head.mesh = head_mesh
 	head.position = Vector3(0, 1.70, -0.02)
 	visual_root.add_child(head)
+	visual_parts.append(head)
 
 	var eye := OmniLight3D.new()
 	eye.position = Vector3(0, 1.55, -0.30)
@@ -53,6 +60,14 @@ func _build_body() -> void:
 	eye.light_energy = 0.34
 	eye.omni_range = 1.15
 	add_child(eye)
+
+func _build_hit_material() -> void:
+	hit_material = StandardMaterial3D.new()
+	hit_material.albedo_color = Color(1.0, 0.48, 0.32)
+	hit_material.emission_enabled = true
+	hit_material.emission = Color(1.0, 0.12, 0.06)
+	hit_material.emission_energy_multiplier = 2.8
+	hit_material.roughness = 0.9
 
 func _add_part(part_name: String, size: Vector3, position: Vector3, color: Color) -> void:
 	var mesh := BoxMesh.new()
@@ -66,9 +81,11 @@ func _add_part(part_name: String, size: Vector3, position: Vector3, color: Color
 	part.mesh = mesh
 	part.position = position
 	visual_root.add_child(part)
+	visual_parts.append(part)
 
 func _physics_process(delta: float) -> void:
 	attack_cooldown = maxf(0.0, attack_cooldown - delta)
+	_update_hit_flash(delta)
 	if not is_instance_valid(target):
 		return
 	var distance := global_position.distance_to(target.global_position)
@@ -114,7 +131,22 @@ func _animate_visual(delta: float) -> void:
 		visual_root.rotation.z = lerpf(visual_root.rotation.z, 0.0, clampf(delta * 6.0, 0.0, 1.0))
 		visual_root.position.y = lerpf(visual_root.position.y, 0.0, clampf(delta * 6.0, 0.0, 1.0))
 
+func _update_hit_flash(delta: float) -> void:
+	if hit_flash_timer > 0.0:
+		hit_flash_timer = maxf(0.0, hit_flash_timer - delta)
+		for part in visual_parts:
+			if is_instance_valid(part):
+				part.material_override = hit_material
+	else:
+		for part in visual_parts:
+			if is_instance_valid(part) and part.material_override != null:
+				part.material_override = null
+
 func take_damage(amount: int) -> void:
-	health -= amount
 	if health <= 0:
+		return
+	health -= amount
+	hit_flash_timer = 0.11
+	if health <= 0:
+		died.emit(global_position + Vector3(0, 1.0, 0))
 		queue_free()
