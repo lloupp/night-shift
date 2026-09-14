@@ -31,3 +31,6 @@ jobs:
 
       - name: Smoke-test main scene
         run: godot --headless --path . --quit-after 2
+
+      - name: Validate gameplay progression
+        run: godot --headless --path . --script res://tests/progression_smoke.gd
